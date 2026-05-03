@@ -4,3 +4,5 @@ flask-jwt-extended
 bcrypt
 gunicorn
 joblib
+scikit-learn==1.3.2
+numpy==1.26.4
