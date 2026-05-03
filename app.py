@@ -1,11 +1,11 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required
-import pickle
 import sqlite3
 import re
 import os
 import bcrypt
+import json
 
 app = Flask(__name__)
 app.config["JWT_SECRET_KEY"] = "super-secret-key"
@@ -13,23 +13,33 @@ jwt = JWTManager(app)
 CORS(app)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-MODEL_PATH = os.path.join(BASE_DIR, "model.pkl")
-VEC_PATH = os.path.join(BASE_DIR, "vectorizer.pkl")
 DB_PATH = os.path.join(BASE_DIR, "database.db")
-# ─── Load Model ─────────────────────────
-import os
-import joblib
 
-print("FILES IN DIR:", os.listdir())
-
+# ─── LOAD LIGHTWEIGHT ML ─────────────────────────
 try:
-    model = joblib.load("model.pkl")
-    vectorizer = joblib.load("vectorizer.pkl")
+    with open("simple_model.json") as f:
+        model = json.load(f)
     ML_AVAILABLE = True
-    print("[OK] ML model loaded")
+    print("[OK] Simple ML loaded")
 except Exception as e:
     ML_AVAILABLE = False
-    print("[ERROR] ML load failed:", e)
+    print("[WARN] ML not available:", e)
+
+# ─── SIMPLE ML FUNCTION ─────────────────────────
+def simple_predict(message):
+    words = message.lower().split()
+    score = 0
+
+    for word in words:
+        if word in model["scam_words"]:
+            score += 1
+
+    if score >= 2:
+        return "Scam", f"{min(score*30,95)}% confidence"
+    elif score == 1:
+        return "Suspicious", "Low confidence"
+    else:
+        return "Safe", "No risk detected"
 
 # ─── DB INIT ───────────────────────────
 def init_db():
@@ -72,19 +82,13 @@ def log_scan(t, text, result):
     conn.commit()
     conn.close()
 
-# ─── PREPROCESS ────────────────────────
-def preprocess(text):
-    text = text.lower()
-    text = re.sub(r"[^a-z0-9\s]", " ", text)
-    return text
-
 # ─── ROUTES ───────────────────────────
 
 @app.route("/")
 def home():
     return jsonify({"status": "running", "ml": ML_AVAILABLE})
 
-# 🔥 MESSAGE DETECTION + INTELLIGENCE
+# 🔥 MESSAGE DETECTION
 @app.route("/predict", methods=["POST"])
 def predict():
     data = request.get_json()
@@ -106,13 +110,9 @@ def predict():
         return jsonify({"result": "Scam", "note": f"Reported {count} times"})
 
     if ML_AVAILABLE:
-        vec = vectorizer.transform([preprocess(text)])
-        pred = model.predict(vec)[0]
-        result = "Scam" if pred == 1 else "Safe"
-        note = "ML detection"
+        result, note = simple_predict(text)
     else:
-        result = "Suspicious"
-        note = "Rule-based fallback"
+        result, note = "Suspicious", "Fallback mode"
 
     log_scan("message", text, result)
     return jsonify({"result": result, "note": note})
@@ -127,7 +127,7 @@ def check_url():
 
     url = data["url"].lower()
 
-    if any(x in url for x in ["bit.ly", "tinyurl", "otp", "bank"]):
+    if any(x in url for x in ["bit.ly", "tinyurl", "otp", "bank", "verify", "login"]):
         result = "Suspicious"
     else:
         result = "Safe"
@@ -165,7 +165,7 @@ def check_number():
     log_scan("number", number, result)
     return jsonify({"result": result, "note": note})
 
-# 🔐 REGISTER (HASHED PASSWORD)
+# 🔐 REGISTER
 @app.route("/register", methods=["POST"])
 def register():
     data = request.get_json()
@@ -189,13 +189,10 @@ def register():
 
     return jsonify({"message": "registered"})
 
-# 🔐 LOGIN (HASH CHECK)
+# 🔐 LOGIN
 @app.route("/login", methods=["POST"])
 def login():
     data = request.get_json()
-
-    if not data or "username" not in data or "password" not in data:
-        return jsonify({"error": "username & password required"}), 400
 
     conn = sqlite3.connect(DB_PATH)
     user = conn.execute(
@@ -204,23 +201,17 @@ def login():
     ).fetchone()
     conn.close()
 
-    if not user:
-        return jsonify({"error": "Invalid credentials"}), 401
-
-    if not bcrypt.checkpw(data["password"].encode(), user[2]):
+    if not user or not bcrypt.checkpw(data["password"].encode(), user[2]):
         return jsonify({"error": "Invalid credentials"}), 401
 
     token = create_access_token(identity=data["username"])
     return jsonify({"token": token})
 
-# 🔒 REPORT (PROTECTED)
+# 🔒 REPORT
 @app.route("/report", methods=["POST"])
 @jwt_required()
 def report():
     data = request.get_json()
-
-    if not data or "type" not in data or "content" not in data:
-        return jsonify({"error": "type & content required"}), 400
 
     conn = sqlite3.connect(DB_PATH)
 
