@@ -16,18 +16,17 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BASE_DIR, "model.pkl")
 VEC_PATH = os.path.join(BASE_DIR, "vectorizer.pkl")
 DB_PATH = os.path.join(BASE_DIR, "database.db")
-
 # ─── Load Model ─────────────────────────
+import joblib
+
 try:
-    with open(MODEL_PATH, "rb") as f:
-        model = pickle.load(f)
-    with open(VEC_PATH, "rb") as f:
-        vectorizer = pickle.load(f)
+    model = joblib.load("model.pkl")
+    vectorizer = joblib.load("vectorizer.pkl")
     ML_AVAILABLE = True
     print("[OK] ML model loaded")
-except:
+except Exception as e:
     ML_AVAILABLE = False
-    print("[WARN] Model not found")
+    print("[WARN] Model not found:", e)
 
 # ─── DB INIT ───────────────────────────
 def init_db():
