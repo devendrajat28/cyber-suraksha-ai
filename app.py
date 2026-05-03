@@ -17,7 +17,10 @@ MODEL_PATH = os.path.join(BASE_DIR, "model.pkl")
 VEC_PATH = os.path.join(BASE_DIR, "vectorizer.pkl")
 DB_PATH = os.path.join(BASE_DIR, "database.db")
 # ─── Load Model ─────────────────────────
+import os
 import joblib
+
+print("FILES IN DIR:", os.listdir())
 
 try:
     model = joblib.load("model.pkl")
@@ -26,7 +29,7 @@ try:
     print("[OK] ML model loaded")
 except Exception as e:
     ML_AVAILABLE = False
-    print("[WARN] Model not found:", e)
+    print("[ERROR] ML load failed:", e)
 
 # ─── DB INIT ───────────────────────────
 def init_db():
